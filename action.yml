@@ -1,0 +1,22 @@
+name: nexus-release
+description: "close and release nexus repo"
+branding:
+  icon: upload
+  color: blue
+inputs:
+  server:
+    description: "Nexus repo server name"
+    required: false
+    default: "s01.oss.sonatype.org"
+  groupId:
+    description: "groupId of the repo"
+    required: true
+  nexusUsername:
+    description: "Nexus username"
+    required: true
+  nexusPassword:
+    description: "Nexus password"
+    required: true
+runs:
+  using: "node16"
+  main: "index.js"
