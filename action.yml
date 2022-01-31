@@ -1,4 +1,4 @@
-name: nexus-release
+name: Nexus Release
 description: "close and release nexus repo"
 branding:
   icon: upload
