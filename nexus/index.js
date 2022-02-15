@@ -1,87 +1,118 @@
 const axios = require('axios').default;
 const cookie = require('cookie');
 
-const COMMON_HEADERS = {
-    Accept: 'application/json,application/vnd.siesta-error-v1+json,application/vnd.siesta-validation-errors-v1+json',
-    Referer: ' https://oss.sonatype.org/',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.111 Safari/537.36',
-    'X-nexus-ui': 'true',
-};
-
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * API of Nexus Repository Manager
+ */
 class Nexus {
     server;
+
+    /**
+     * get header
+     * @returns {{Accept: string, Referer, "X-nexus-ui": string}}
+     */
+    getHeader() {
+        return {
+            Accept: 'application/json,application/vnd.siesta-error-v1+json,application/vnd.siesta-validation-errors-v1+json',
+            Referer: this.server,
+            'X-nexus-ui': 'true'
+        }
+    }
+
+    /**
+     * login to nexus repository manager
+     * @param username username
+     * @param password password
+     * @returns {Promise<void>}
+     */
     async login(username, password) {
-        const result = await axios.get(`https://${(this.server)}/service/local/authentication/login?_dc=${new Date().getTime()}`,
-            {
-                headers: {
-                    ...COMMON_HEADERS,
-                    Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`,
-                },
-            });
-        this.cookie = `NXSESSIONID=${cookie.parse(result.headers['set-cookie'][0]).NXSESSIONID}`;
+        const url = `https://${(this.server)}/service/local/authentication/login`
+        const header = {
+            ...this.getHeader(),
+            Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+        }
+        const result = await axios.get(url, {headers: {...header}})
+        this.cookie = `NXSESSIONID=${cookie.parse(result.headers['set-cookie'][0]).NXSESSIONID}`
     }
 
-    async repositories() {
-        const result = await axios.get(`https://${(this.server)}/service/local/staging/profile_repositories?_dc=${new Date().getTime()}`,
-            {
-                headers: {
-                    ...COMMON_HEADERS,
-                    Cookie: this.cookie,
-                },
-            });
-        return result.data.data;
+    /**
+     * get staging repositories
+     * @returns {Promise<*>}
+     */
+    async getStagingRepositories() {
+        const url = `https://${(this.server)}/service/local/staging/profile_repositories`
+        const header = {
+            ...this.getHeader(),
+            Cookie: this.cookie
+        }
+        const result = await axios.get(url, {headers: {...header}})
+        return result.data.data
     }
 
-    async close(repositoryId) {
-        await axios.post(`https://${(this.server)}/service/local/staging/bulk/close`,
-            { data: { description: '', stagedRepositoryIds: [repositoryId] } },
-            {
-                headers: {
-                    ...COMMON_HEADERS,
-                    'Content-Type': 'application/json',
-                    Cookie: this.cookie,
-                },
-            });
-    }
-
-    async closeWait(repositoryId) {
-        // eslint-disable-next-line no-constant-condition
+    /**
+     * Close and wait
+     * @param repositoryId repository id
+     * @returns {Promise<void>}
+     */
+    async closeAndWait(repositoryId) {
+        //post close request
+        const url = `https://${(this.server)}/service/local/staging/bulk/close`
+        const data = {
+            data: {
+                description: '',
+                stagedRepositoryIds: [repositoryId]
+            }
+        }
+        const header = {
+            ...this.getHeader(),
+            'Content-Type': 'application/json',
+            Cookie: this.cookie
+        }
+        await axios.post(url, {data: {...data}}, {headers: {...header}})
+        //wait
         while (true) {
-            // eslint-disable-next-line no-await-in-loop
-            await sleep(60000);
-            // eslint-disable-next-line no-await-in-loop
-            const result = await axios.get(`https://${(this.server)}/service/local/staging/repository/${repositoryId}/activity?_dc=${new Date().getTime()}`, {
-                headers: {
-                    ...COMMON_HEADERS,
-                    Cookie: this.cookie,
-                },
-            });
-            const closeEvents = result.data.filter((e) => e.name === 'close')[0].events;
-            const failEvents = closeEvents.filter((e) => e.name === 'ruleFailed');
-            if (failEvents.length) {
-                throw new Error('Nexus close failed:', JSON.stringify(failEvents));
+            await sleep(20000)
+            const url = `https://${(this.server)}/service/local/staging/repository/${repositoryId}/activity`
+            const header = {
+                ...this.getHeader(),
+                Cookie: this.cookie
+            }
+            const result = await axios.get(url, {headers: {...header}})
+            const closeEvents = result.data.filter((e) => e.name === 'close')[0].events
+            const failEvents = closeEvents.filter((e) => e.name === 'ruleFailed')
+            if (failEvents.length >= 1) {
+                throw new Error('Nexus close failed:', JSON.stringify(failEvents))
             }
             if (closeEvents[closeEvents.length - 1].name === 'repositoryClosed') {
-                break;
+                break
             }
         }
     }
 
-    async release(repositoryId) {
-        await axios.post(`https://${(this.server)}/service/local/staging/bulk/promote`,
-            { data: { autoDropAfterRelease: true, description: '', stagedRepositoryIds: [repositoryId] } },
-            {
-                headers: {
-                    ...COMMON_HEADERS,
-                    'Content-Type': 'application/json',
-                    Cookie: this.cookie,
-                },
-            });
+    /**
+     * Release staging repository and drop it
+     * @param repositoryId repository id
+     * @returns {Promise<void>}
+     */
+    async releaseAndDrop(repositoryId) {
+        const url = `https://${(this.server)}/service/local/staging/bulk/promote`
+        const data = {
+            autoDropAfterRelease: true,
+            description: '',
+            stagedRepositoryIds: [repositoryId]
+        }
+        const header = {
+            ...this.getHeader(),
+            'Content-Type': 'application/json',
+            Cookie: this.cookie
+        }
+        await axios.post(url, {data: {...data}}, {headers: {...header}})
     }
+
 }
 
-module.exports = new Nexus();
+module.exports = new Nexus()

@@ -7,7 +7,7 @@ const nexus = require("./nexus/index");
         nexus.server = core.getInput("server")
         await nexus.login(core.getInput("nexusUsername"),core.getInput("nexusPassword"))
         console.log("Finding repository")
-        const repositories = await nexus.repositories()
+        const repositories = await nexus.getStagingRepositories()
         const targetRepos = repositories.filter((r) => r.profileName = groupId)
         if (!targetRepos || targetRepos.length <= 0) {
             throw new Error(`Repository not found,repositories:${JSON.stringify(repositories)}`);
@@ -18,10 +18,9 @@ const nexus = require("./nexus/index");
         console.log("Repository found.")
         const repo = targetRepos[0];
         console.log('Nexus closing');
-        await nexus.close(repo.repositoryId);
-        await nexus.closeWait(repo.repositoryId);
+        await nexus.closeAndWait(repo.repositoryId);
         console.log('Nexus closed');
-        await nexus.release(repo.repositoryId);
+        await nexus.releaseAndDrop(repo.repositoryId);
         console.log('Nexus released');
     }
 )();
